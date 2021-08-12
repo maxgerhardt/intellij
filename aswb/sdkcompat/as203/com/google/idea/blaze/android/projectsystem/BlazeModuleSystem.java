@@ -23,6 +23,7 @@ import com.android.tools.idea.projectsystem.AndroidModuleSystem;
 import com.android.tools.idea.projectsystem.DependencyScopeType;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.ImmutableSet;
 import com.google.idea.blaze.android.libraries.UnpackedAars;
 import com.google.idea.blaze.android.sync.model.AarLibrary;
 import com.google.idea.blaze.android.sync.model.AndroidResourceModuleRegistry;
@@ -34,7 +35,6 @@ import com.google.idea.blaze.base.projectview.ProjectViewManager;
 import com.google.idea.blaze.base.sync.SyncCache;
 import com.google.idea.blaze.base.sync.data.BlazeProjectDataManager;
 import com.google.idea.blaze.base.sync.libraries.BlazeLibraryCollector;
-import com.google.idea.blaze.base.sync.workspace.ArtifactLocationDecoder;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.project.Project;
 import java.io.File;
@@ -77,33 +77,30 @@ public class BlazeModuleSystem extends BlazeModuleSystemBase {
       return ImmutableList.of();
     }
 
-    ImmutableList.Builder<ExternalAndroidLibrary> libraries = ImmutableList.builder();
-    ArtifactLocationDecoder decoder = blazeProjectData.getArtifactLocationDecoder();
+    // It's possible to have duplicate ExternalLibrary when AarLibrary shared same library key.
+    // Use set to avoid duplication.
+    ImmutableSet.Builder<ExternalAndroidLibrary> libraries = ImmutableSet.builder();
     ExternalLibraryInterner externalLibraryInterner = ExternalLibraryInterner.getInstance(project);
     for (String libraryKey : registry.get(module).resourceLibraryKeys) {
       ImmutableMap<String, AarLibrary> aarLibraries = androidSyncData.importResult.aarLibraries;
-      if (aarLibraries != null && aarLibraries.containsKey(libraryKey)) {
-        ExternalAndroidLibrary externalLibrary =
-            toExternalLibrary(project, aarLibraries.get(libraryKey), decoder);
-        if (externalLibrary != null) {
-          libraries.add(externalLibraryInterner.intern(externalLibrary));
-        }
+      ExternalAndroidLibrary externalLibrary =
+          toExternalLibrary(project, aarLibraries.get(libraryKey));
+      if (externalLibrary != null) {
+        libraries.add(externalLibraryInterner.intern(externalLibrary));
       }
     }
     return libraries.build();
   }
 
-  private static ImmutableList<ExternalAndroidLibrary> getLibrariesForWorkspaceModule(
+  private static ImmutableSet<ExternalAndroidLibrary> getLibrariesForWorkspaceModule(
       Project project, BlazeProjectData blazeProjectData) {
-    ArtifactLocationDecoder decoder = blazeProjectData.getArtifactLocationDecoder();
     ExternalLibraryInterner externalLibraryInterner = ExternalLibraryInterner.getInstance(project);
-    ImmutableList.Builder<ExternalAndroidLibrary> libraries = ImmutableList.builder();
+    ImmutableSet.Builder<ExternalAndroidLibrary> libraries = ImmutableSet.builder();
     for (BlazeLibrary library :
         BlazeLibraryCollector.getLibraries(
             ProjectViewManager.getInstance(project).getProjectViewSet(), blazeProjectData)) {
       if (library instanceof AarLibrary) {
-        ExternalAndroidLibrary externalLibrary =
-            toExternalLibrary(project, (AarLibrary) library, decoder);
+        ExternalAndroidLibrary externalLibrary = toExternalLibrary(project, (AarLibrary) library);
         if (externalLibrary != null) {
           libraries.add(externalLibraryInterner.intern(externalLibrary));
         }
@@ -113,10 +110,12 @@ public class BlazeModuleSystem extends BlazeModuleSystemBase {
   }
 
   @Nullable
-  static ExternalAndroidLibrary toExternalLibrary(
-      Project project, AarLibrary library, ArtifactLocationDecoder decoder) {
+  static ExternalAndroidLibrary toExternalLibrary(Project project, @Nullable AarLibrary library) {
+    if (library == null) {
+      return null;
+    }
     UnpackedAars unpackedAars = UnpackedAars.getInstance(project);
-    File aarFile = unpackedAars.getAarDir(decoder, library);
+    File aarFile = unpackedAars.getAarDir(library);
     if (aarFile == null) {
       logger.warn(
           String.format(
@@ -124,7 +123,7 @@ public class BlazeModuleSystem extends BlazeModuleSystemBase {
               library.aarArtifact));
       return null;
     }
-    File resFolder = unpackedAars.getResourceDirectory(decoder, library);
+    File resFolder = unpackedAars.getResourceDirectory(library);
     PathString resFolderPathString = resFolder == null ? null : new PathString(resFolder);
     return new ExternalLibraryImpl(library.key.toString())
         .withLocation(new PathString(aarFile))

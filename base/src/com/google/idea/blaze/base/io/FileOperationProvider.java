@@ -15,6 +15,9 @@
  */
 package com.google.idea.blaze.base.io;
 
+import static com.google.common.collect.ImmutableList.toImmutableList;
+
+import com.google.common.collect.ImmutableList;
 import com.google.common.io.MoreFiles;
 import com.google.common.io.RecursiveDeleteOption;
 import com.intellij.openapi.components.ServiceManager;
@@ -25,6 +28,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileAttribute;
 import java.util.List;
+import java.util.stream.Stream;
 import javax.annotation.Nullable;
 
 /** File system operations. Mocked out in tests involving file manipulations. */
@@ -95,6 +99,16 @@ public class FileOperationProvider {
 
   public void deleteRecursively(File file) throws IOException {
     deleteRecursively(file, false);
+  }
+
+  public ImmutableList<Path> listFilesRecursively(File file) {
+    try (Stream<Path> stream =
+        Files.find(
+            file.toPath(), Integer.MAX_VALUE, (filePath, fileAttr) -> fileAttr.isRegularFile())) {
+      return stream.collect(toImmutableList());
+    } catch (IOException e) {
+      return ImmutableList.of();
+    }
   }
 
   /**

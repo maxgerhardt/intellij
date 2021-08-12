@@ -21,9 +21,14 @@ import static com.google.idea.blaze.android.targetmapbuilder.NbAndroidTarget.and
 
 import com.android.tools.idea.res.AarResourceRepositoryCache;
 import com.google.common.collect.ImmutableList;
+import com.google.idea.blaze.android.libraries.AarDirectoryNameUtils;
 import com.google.idea.blaze.android.libraries.AarLibraryFileBuilder;
 import com.google.idea.blaze.android.libraries.UnpackedAars;
+import com.google.idea.blaze.android.libraries.Unpacker;
+import com.google.idea.blaze.android.sync.model.AarLibrary;
+import com.google.idea.blaze.android.sync.model.AarLibraryFactory;
 import com.google.idea.blaze.android.targetmapbuilder.NbAarTarget;
+import com.google.idea.blaze.base.ideinfo.ArtifactLocation;
 import com.google.idea.blaze.base.model.primitives.WorkspacePath;
 import com.intellij.codeInsight.navigation.actions.GotoDeclarationAction;
 import com.intellij.openapi.vfs.VirtualFile;
@@ -75,24 +80,23 @@ public class AswbGotoDeclarationTest extends BlazeAndroidIntegrationTestCase {
     // go-to-declaration
     // is invoked on elements declared in the AAR, the IDE should open the resource file inside the
     // unpacked AAR.
-    File aarContainingStylesXml =
-        AarLibraryFileBuilder.aar(workspaceRoot, "java/com/foo/libs/libs_aar.aar")
-            .src(
-                "res/values/styles.xml",
-                ImmutableList.of(
-                    "<?xml version=\"1.0\" encoding=\"utf-8\"?>",
-                    "<resources>",
-                    "    <style name=\"Highlight\" parent=\"android:Theme.DeviceDefault\">",
-                    "        <item name=\"android:textSize\">30dp</item>",
-                    "        <item name=\"android:textColor\">#FF0000</item>",
-                    "        <item name=\"android:textStyle\">bold</item>",
-                    "    </style>",
-                    "    <style name=\"Normal\" parent=\"android:Theme.DeviceDefault\">",
-                    "        <item name=\"android:textSize\">15dp</item>",
-                    "        <item name=\"android:textColor\">#C0C0C0</item>",
-                    "    </style>",
-                    "</resources>"))
-            .build();
+    AarLibraryFileBuilder.aar(workspaceRoot, "java/com/foo/libs/libs_aar.aar")
+        .src(
+            "res/values/styles.xml",
+            ImmutableList.of(
+                "<?xml version=\"1.0\" encoding=\"utf-8\"?>",
+                "<resources>",
+                "    <style name=\"Highlight\" parent=\"android:Theme.DeviceDefault\">",
+                "        <item name=\"android:textSize\">30dp</item>",
+                "        <item name=\"android:textColor\">#FF0000</item>",
+                "        <item name=\"android:textStyle\">bold</item>",
+                "    </style>",
+                "    <style name=\"Normal\" parent=\"android:Theme.DeviceDefault\">",
+                "        <item name=\"android:textSize\">15dp</item>",
+                "        <item name=\"android:textColor\">#C0C0C0</item>",
+                "    </style>",
+                "</resources>"))
+        .build();
 
     setTargetMap(
         android_library("//java/com/foo/gallery/activities:activities")
@@ -105,7 +109,8 @@ public class AswbGotoDeclarationTest extends BlazeAndroidIntegrationTestCase {
 
     testFixture.configureFromExistingVirtualFile(mainActivity);
     assertGotoDeclarationOpensFile(
-        "Highlight", getResourceFile(aarContainingStylesXml, "values/styles.xml"));
+        "Highlight",
+        getResourceFile("java/com/foo/libs/libs_aar.aar", "com.foo.libs", "values/styles.xml"));
   }
 
   @Test
@@ -162,28 +167,27 @@ public class AswbGotoDeclarationTest extends BlazeAndroidIntegrationTestCase {
             .aar("lib_aar.aar")
             .generated_jar("classes_and_libs_merged.jar");
 
-    File aarLibraryFile =
-        AarLibraryFileBuilder.aar(workspaceRoot, aarTarget.getAar().getRelativePath())
-            .src(
-                "res/layout/activity_aar.xml",
-                ImmutableList.of(
-                    "<?xml version=\"1.0\" encoding=\"utf-8\"?>",
-                    "<RelativeLayout xmlns:android=\"http://schemas.android.com/apk/res/android\"",
-                    "    xmlns:tools=\"http://schemas.android.com/tools\"",
-                    "    android:layout_width=\"fill_parent\"",
-                    "    android:layout_height=\"fill_parent\"",
-                    "    android:paddingLeft=\"16dp\"",
-                    "    android:paddingRight=\"16dp\"",
-                    "    tools:context=\".MainActivity\" >",
-                    "</RelativeLayout>"))
-            .src(
-                "res/values/colors.xml",
-                ImmutableList.of(
-                    "<?xml version=\"1.0\" encoding=\"utf-8\"?>",
-                    "<resources>",
-                    "    <color name=\"aarColor\">#ffffff</color>",
-                    "</resources>"))
-            .build();
+    AarLibraryFileBuilder.aar(workspaceRoot, aarTarget.getAar().getRelativePath())
+        .src(
+            "res/layout/activity_aar.xml",
+            ImmutableList.of(
+                "<?xml version=\"1.0\" encoding=\"utf-8\"?>",
+                "<RelativeLayout xmlns:android=\"http://schemas.android.com/apk/res/android\"",
+                "    xmlns:tools=\"http://schemas.android.com/tools\"",
+                "    android:layout_width=\"fill_parent\"",
+                "    android:layout_height=\"fill_parent\"",
+                "    android:paddingLeft=\"16dp\"",
+                "    android:paddingRight=\"16dp\"",
+                "    tools:context=\".MainActivity\" >",
+                "</RelativeLayout>"))
+        .src(
+            "res/values/colors.xml",
+            ImmutableList.of(
+                "<?xml version=\"1.0\" encoding=\"utf-8\"?>",
+                "<resources>",
+                "    <color name=\"aarColor\">#ffffff</color>",
+                "</resources>"))
+        .build();
 
     setTargetMap(
         android_library("//java/com/foo/gallery/activities:activities")
@@ -192,8 +196,11 @@ public class AswbGotoDeclarationTest extends BlazeAndroidIntegrationTestCase {
             .res("res"),
         aarTarget);
     runFullBlazeSyncWithNoIssues();
-    VirtualFile aarColorXml = getResourceFile(aarLibraryFile, "values/colors.xml");
-    VirtualFile aarLayoutXml = getResourceFile(aarLibraryFile, "layout/activity_aar.xml");
+    VirtualFile aarColorXml =
+        getResourceFile("third_party/aar/lib_aar.aar", "third_party.aar", "values/colors.xml");
+    VirtualFile aarLayoutXml =
+        getResourceFile(
+            "third_party/aar/lib_aar.aar", "third_party.aar", "layout/activity_aar.xml");
     testFixture.configureFromExistingVirtualFile(mainActivity);
     assertGotoDeclarationOpensFile("aarColor", aarColorXml);
     assertGotoDeclarationOpensFile("activity_aar", aarLayoutXml);
@@ -213,16 +220,15 @@ public class AswbGotoDeclarationTest extends BlazeAndroidIntegrationTestCase {
         aar_import("//third_party/aar:lib_aar")
             .aar("lib_aar.aar")
             .generated_jar("classes_and_libs_merged.jar");
-    File aarLibraryFile =
-        AarLibraryFileBuilder.aar(workspaceRoot, aarTarget.getAar().getRelativePath())
-            .src(
-                "res/values/colors.xml",
-                ImmutableList.of(
-                    "<?xml version=\"1.0\" encoding=\"utf-8\"?>",
-                    "<resources>",
-                    "    <color name=\"aarColor\">#ffffff</color>",
-                    "</resources>"))
-            .build();
+    AarLibraryFileBuilder.aar(workspaceRoot, aarTarget.getAar().getRelativePath())
+        .src(
+            "res/values/colors.xml",
+            ImmutableList.of(
+                "<?xml version=\"1.0\" encoding=\"utf-8\"?>",
+                "<resources>",
+                "    <color name=\"aarColor\">#ffffff</color>",
+                "</resources>"))
+        .build();
 
     setTargetMap(
         android_library("//java/com/foo/gallery/activities:activities")
@@ -231,7 +237,8 @@ public class AswbGotoDeclarationTest extends BlazeAndroidIntegrationTestCase {
         aarTarget);
     runFullBlazeSyncWithNoIssues();
 
-    VirtualFile aarColorXml = getResourceFile(aarLibraryFile, "values/colors.xml");
+    VirtualFile aarColorXml =
+        getResourceFile("third_party/aar/lib_aar.aar", "third_party.aar", "values/colors.xml");
 
     testFixture.configureFromExistingVirtualFile(colorXml);
     assertGotoDeclarationOpensFile("@color/aarColor", aarColorXml);
@@ -244,22 +251,21 @@ public class AswbGotoDeclarationTest extends BlazeAndroidIntegrationTestCase {
         aar_import("//third_party/aar:lib_aar")
             .aar("lib_aar.aar")
             .generated_jar("classes_and_libs_merged.jar");
-    File aarLibraryFile =
-        AarLibraryFileBuilder.aar(workspaceRoot, aarTarget.getAar().getRelativePath())
-            .src(
-                "res/values/colors.xml",
-                ImmutableList.of(
-                    "<?xml version=\"1.0\" encoding=\"utf-8\"?>",
-                    "<resources>",
-                    "    <color name=\"baseColor\">#000000</color>",
-                    "    <color name=\"colorPrimary\">#008577</color>",
-                    "    <color name=\"colorPrimaryDark\">@color/baseColor</color>",
-                    "    <string name=\"app_name\">My Application</string>",
-                    "    <style name=\"AppTheme\">",
-                    "        <item name=\"android:textColor\">@color/colorPrimary</item>",
-                    "    </style>",
-                    "</resources>"))
-            .build();
+    AarLibraryFileBuilder.aar(workspaceRoot, aarTarget.getAar().getRelativePath())
+        .src(
+            "res/values/colors.xml",
+            ImmutableList.of(
+                "<?xml version=\"1.0\" encoding=\"utf-8\"?>",
+                "<resources>",
+                "    <color name=\"baseColor\">#000000</color>",
+                "    <color name=\"colorPrimary\">#008577</color>",
+                "    <color name=\"colorPrimaryDark\">@color/baseColor</color>",
+                "    <string name=\"app_name\">My Application</string>",
+                "    <style name=\"AppTheme\">",
+                "        <item name=\"android:textColor\">@color/colorPrimary</item>",
+                "    </style>",
+                "</resources>"))
+        .build();
 
     setTargetMap(
         android_library("//java/com/foo/gallery/activities:activities")
@@ -268,7 +274,8 @@ public class AswbGotoDeclarationTest extends BlazeAndroidIntegrationTestCase {
         aarTarget);
     runFullBlazeSyncWithNoIssues();
 
-    VirtualFile aarColorXml = getResourceFile(aarLibraryFile, "values/colors.xml");
+    VirtualFile aarColorXml =
+        getResourceFile("third_party/aar/lib_aar.aar", "third_party.aar", "values/colors.xml");
     testFixture.configureFromExistingVirtualFile(aarColorXml);
     assertGotoDeclarationOpensFile("@color/baseColor", aarColorXml);
     // b/120106463
@@ -286,9 +293,12 @@ public class AswbGotoDeclarationTest extends BlazeAndroidIntegrationTestCase {
     assertThat(foundElement.getContainingFile().getVirtualFile()).isEqualTo(expectedFile);
   }
 
-  private VirtualFile getResourceFile(File aarLibraryFile, String relativePathToResourceFile) {
-    String cacheKey = UnpackedAars.cacheKeyForAar(aarLibraryFile.getAbsolutePath());
-    File resourceDir = UnpackedAars.getInstance(getProject()).getResourceDirectory(cacheKey);
+  private VirtualFile getResourceFile(
+      String aarRelativePath, String resourcePackageName, String relativePathToResourceFile) {
+    AarLibrary aarLibrary = AarLibraryFactory.create(source(aarRelativePath), resourcePackageName);
+    String cacheKey = Unpacker.getAarDirName(aarLibrary);
+    File aarDir = new File(UnpackedAars.getInstance(getProject()).getCacheDir(), cacheKey);
+    File resourceDir = AarDirectoryNameUtils.getResDir(aarDir);
     return VirtualFileManager.getInstance()
         .findFileByUrl(
             URLUtil.FILE_PROTOCOL
@@ -296,5 +306,9 @@ public class AswbGotoDeclarationTest extends BlazeAndroidIntegrationTestCase {
                 + resourceDir.getPath()
                 + File.separator
                 + relativePathToResourceFile);
+  }
+
+  private static ArtifactLocation source(String relativePath) {
+    return ArtifactLocation.builder().setRelativePath(relativePath).setIsSource(true).build();
   }
 }

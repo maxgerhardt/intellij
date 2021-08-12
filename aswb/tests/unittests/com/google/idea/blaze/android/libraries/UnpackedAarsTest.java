@@ -24,6 +24,7 @@ import com.google.common.collect.ImmutableSet;
 import com.google.idea.blaze.android.libraries.UnpackedAars.FileCacheAdapter;
 import com.google.idea.blaze.android.sync.BlazeAndroidSyncPlugin;
 import com.google.idea.blaze.android.sync.model.AarLibrary;
+import com.google.idea.blaze.android.sync.model.AarLibraryFactory;
 import com.google.idea.blaze.android.sync.model.AndroidSdkPlatform;
 import com.google.idea.blaze.android.sync.model.BlazeAndroidImportResult;
 import com.google.idea.blaze.android.sync.model.BlazeAndroidSyncData;
@@ -151,7 +152,7 @@ public class UnpackedAarsTest extends BlazeTestCase {
     // e.g. objfs has been expired which cannot be read any more.
     String resourceAar = "resource.aar";
     ArtifactLocation resourceAarArtifactLocation = generateArtifactLocation(resourceAar);
-    AarLibrary resourceAarLibrary = new AarLibrary(resourceAarArtifactLocation, null);
+    AarLibrary resourceAarLibrary = AarLibraryFactory.create(resourceAarArtifactLocation, null);
 
     BlazeAndroidImportResult importResult =
         new BlazeAndroidImportResult(
@@ -203,7 +204,7 @@ public class UnpackedAarsTest extends BlazeTestCase {
         .src(stringsXmlRelativePath, ImmutableList.of(STRINGS_XML_CONTENT))
         .build();
     ArtifactLocation resourceAarArtifactLocation = generateArtifactLocation(resourceAar);
-    AarLibrary resourceAarLibrary = new AarLibrary(resourceAarArtifactLocation, null);
+    AarLibrary resourceAarLibrary = AarLibraryFactory.create(resourceAarArtifactLocation, null);
 
     // new aar with jar files
     String importedAar = "import.aar";
@@ -223,7 +224,7 @@ public class UnpackedAarsTest extends BlazeTestCase {
     LibraryArtifact libraryArtifact =
         LibraryArtifact.builder().setInterfaceJar(jarArtifactLocation).build();
     AarLibrary importedAarLibrary =
-        new AarLibrary(libraryArtifact, importedAarArtifactLocation, null);
+        AarLibraryFactory.create(libraryArtifact, importedAarArtifactLocation, null);
 
     BlazeAndroidImportResult importResult =
         new BlazeAndroidImportResult(
@@ -256,28 +257,44 @@ public class UnpackedAarsTest extends BlazeTestCase {
                     null,
                     SyncMode.INCREMENTAL));
 
-    assertThat(aarCacheDir.list()).hasLength(2);
-    File resourceAarDir = unpackedAars.getAarDir(artifactLocationDecoder, resourceAarLibrary);
-    File importedAarDir = unpackedAars.getAarDir(artifactLocationDecoder, importedAarLibrary);
-    assertThat(aarCacheDir.listFiles()).asList().containsExactly(resourceAarDir, importedAarDir);
-    assertThat(resourceAarDir.list()).asList().containsExactly("aar.timestamp", "res");
-    assertThat(importedAarDir.list()).asList().containsExactly("aar.timestamp", "res", "jars");
+    assertThat(aarCacheDir.list()).hasLength(4);
+    File mergedResourceAarDir = unpackedAars.getAarDir(resourceAarLibrary);
+    File mergedImportedAarDir = unpackedAars.getAarDir(importedAarLibrary);
+    File resourceAarDir =
+        new File(
+            unpackedAars.getCacheDir(),
+            AarDirectoryNameUtils.getAarDirName(
+                artifactLocationDecoder.resolveOutput(resourceAarLibrary.aarArtifact)));
+    File importedAarDir =
+        new File(
+            unpackedAars.getCacheDir(),
+            AarDirectoryNameUtils.getAarDirName(
+                artifactLocationDecoder.resolveOutput(importedAarLibrary.aarArtifact)));
+    assertThat(aarCacheDir.listFiles())
+        .asList()
+        .containsExactly(
+            mergedResourceAarDir, mergedImportedAarDir, resourceAarDir, importedAarDir);
+    assertThat(mergedResourceAarDir.list()).asList().containsExactly("aar.timestamp", "res");
+    assertThat(mergedImportedAarDir.list())
+        .asList()
+        .containsExactly("aar.timestamp", "res", "jars");
 
-    assertThat(new File(resourceAarDir, "res").list()).hasLength(1);
-    assertThat(new File(importedAarDir, "res").list()).hasLength(1);
+    assertThat(new File(mergedResourceAarDir, "res").list()).hasLength(1);
+    assertThat(new File(mergedImportedAarDir, "res").list()).hasLength(1);
 
     assertThat(
             new String(
-                Files.readAllBytes(new File(resourceAarDir, stringsXmlRelativePath).toPath()),
+                Files.readAllBytes(new File(mergedResourceAarDir, stringsXmlRelativePath).toPath()),
                 UTF_8))
         .isEqualTo(STRINGS_XML_CONTENT);
     assertThat(
             new String(
-                Files.readAllBytes(new File(importedAarDir, colorsXmlRelativePath).toPath()),
+                Files.readAllBytes(new File(mergedImportedAarDir, colorsXmlRelativePath).toPath()),
                 UTF_8))
         .isEqualTo(COLORS_XML_CONTENT);
     byte[] actualJarContent =
-        Files.readAllBytes(new File(importedAarDir, "jars/classes_and_libs_merged.jar").toPath());
+        Files.readAllBytes(
+            new File(mergedImportedAarDir, "jars/classes_and_libs_merged.jar").toPath());
     byte[] expectedJarContent = Files.readAllBytes(jar.toPath());
     assertThat(actualJarContent).isEqualTo(expectedJarContent);
 
