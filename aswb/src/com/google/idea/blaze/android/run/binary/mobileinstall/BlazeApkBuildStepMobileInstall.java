@@ -169,6 +169,10 @@ public class BlazeApkBuildStepMobileInstall implements BlazeApkBuildStep {
           // MI launches apps by default. Defer app launch to BlazeAndroidLaunchTasksProvider.
           .addExeFlags("--nolaunch_app");
 
+      if (BlazeAndroidBinaryMobileInstallRunContextBase.useStudioDeployer.getValue()) {
+        command.addExeFlags("--nodeploy");
+      }
+
       SaveUtil.saveAllFiles();
       context.output(new StatusOutput("Invoking mobile-install..."));
       int retVal =
